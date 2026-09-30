@@ -406,6 +406,12 @@ endif()
 list(APPEND QUIC_COMMON_DEFINES VER_BUILD_ID=${QUIC_VER_BUILD_ID})
 list(APPEND QUIC_COMMON_DEFINES VER_SUFFIX=${QUIC_VER_SUFFIX})
 
+# The largest IP MTU the datapath handles and DPLPMTUD may probe to. 1500 is the
+# stock value; a jumbo-frame deployment builds with 9000. Applied as the
+# CXPLAT_MAX_MTU definition every derived buffer size and clamp follows.
+set(QUIC_MAX_MTU 1500 CACHE STRING "Maximum IP MTU (bytes) the datapath supports; default 1500")
+list(APPEND QUIC_COMMON_DEFINES CXPLAT_MAX_MTU=${QUIC_MAX_MTU})
+
 if (QUIC_EMBED_GIT_HASH)
     list(APPEND QUIC_COMMON_DEFINES VER_GIT_HASH=${GIT_CURRENT_HASH})
 endif()
