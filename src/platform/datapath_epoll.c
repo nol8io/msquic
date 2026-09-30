@@ -919,6 +919,30 @@ CxPlatSocketContextInitialize(
         }
 
         //
+        // The same socket carries every endpoint's sends; raise the send buffer
+        // with the receive buffer so a burst of segmented batches is queued
+        // rather than refused (the kernel counts a refused send as SndbufErrors).
+        //
+        Option = INT32_MAX;
+        Result =
+            setsockopt(
+                SocketContext->SocketFd,
+                SOL_SOCKET,
+                SO_SNDBUF,
+                (const void*)&Option,
+                sizeof(Option));
+        if (Result == SOCKET_ERROR) {
+            Status = errno;
+            QuicTraceEvent(
+                DatapathErrorStatus,
+                "[data][%p] ERROR, %u, %s.",
+                Binding,
+                Status,
+                "setsockopt(SO_SNDBUF) failed");
+            goto Exit;
+        }
+
+        //
         // Only set SO_REUSEPORT on a server socket, otherwise the client could be
         // assigned a server port (unless it's forcing sharing).
         //
