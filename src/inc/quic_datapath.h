@@ -92,9 +92,12 @@ typedef enum CXPLAT_DSCP_TYPE {
 #define CXPLAT_MAX_DSCP 63
 
 //
-// The maximum IP MTU this implementation supports for QUIC.
+// The maximum IP MTU this implementation supports for QUIC. The build sets it
+// through the QUIC_MAX_MTU CMake variable (default 1500).
 //
+#ifndef CXPLAT_MAX_MTU
 #define CXPLAT_MAX_MTU 1500
+#endif
 
 //
 // The buffer size that must be allocated to fit the maximum UDP payload we
