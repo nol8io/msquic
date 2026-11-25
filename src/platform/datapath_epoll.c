@@ -1789,7 +1789,7 @@ CxPlatSocketReceiveCoalesced(
     do {
         uint32_t RetryCount = 0;
         do {
-            IoBlock = CxPlatPoolAlloc(&DatapathPartition->RecvBlockPool);
+            IoBlock = CxPlatPoolAllocUninitialized(&DatapathPartition->RecvBlockPool);
         } while (IoBlock == NULL && ++RetryCount < 10);
         if (IoBlock == NULL) {
             QuicTraceEvent(
@@ -1799,6 +1799,11 @@ CxPlatSocketReceiveCoalesced(
                 0);
             goto Exit;
         }
+        //
+        // The socket receive writes the payload before anything reads it: zero the
+        // block's metadata (the IO block and its packet descriptors), not its buffer.
+        //
+        CxPlatZeroMemory(IoBlock, DatapathPartition->Datapath->RecvBlockBufferOffset);
 
         CxPlatZeroMemory(&IoBlock->Route, sizeof(CXPLAT_ROUTE));
         IoBlock->Route.State = RouteResolved;
@@ -1863,7 +1868,7 @@ CxPlatSocketReceiveMessages(
 
             DATAPATH_RX_IO_BLOCK* IoBlock;
             do {
-                IoBlock = CxPlatPoolAlloc(&DatapathPartition->RecvBlockPool);
+                IoBlock = CxPlatPoolAllocUninitialized(&DatapathPartition->RecvBlockPool);
             } while (IoBlock == NULL && ++RetryCount < 10);
             if (IoBlock == NULL) {
                 QuicTraceEvent(
@@ -1873,6 +1878,11 @@ CxPlatSocketReceiveMessages(
                     0);
                 goto Exit;
             }
+            //
+            // The socket receive writes the payload before anything reads it: zero the
+            // block's metadata (the IO block and its packet descriptors), not its buffer.
+            //
+            CxPlatZeroMemory(IoBlock, DatapathPartition->Datapath->RecvBlockBufferOffset);
 
             IoBlocks[i] = IoBlock;
             CxPlatZeroMemory(&IoBlock->Route, sizeof(CXPLAT_ROUTE));
@@ -1938,7 +1948,7 @@ CxPlatSocketReceiveTcpData(
     do {
         uint32_t RetryCount = 0;
         do {
-            IoBlock = CxPlatPoolAlloc(&DatapathPartition->RecvBlockPool);
+            IoBlock = CxPlatPoolAllocUninitialized(&DatapathPartition->RecvBlockPool);
         } while (IoBlock == NULL && ++RetryCount < 10);
         if (IoBlock == NULL) {
             QuicTraceEvent(
@@ -1948,6 +1958,11 @@ CxPlatSocketReceiveTcpData(
                 0);
             goto Exit;
         }
+        //
+        // The socket receive writes the payload before anything reads it: zero the
+        // block's metadata (the IO block and its packet descriptors), not its buffer.
+        //
+        CxPlatZeroMemory(IoBlock, DatapathPartition->Datapath->RecvBlockBufferOffset);
 
         CxPlatZeroMemory(&IoBlock->Route, sizeof(CXPLAT_ROUTE));
         IoBlock->Route.State = RouteResolved;
