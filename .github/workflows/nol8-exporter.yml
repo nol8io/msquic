@@ -1,0 +1,49 @@
+# The nol8 fork's own gate: a connection's TLS exporter is its own, for both TLS libraries on
+# Linux. Upstream's test workflow runs for main and release branches only, and needs runners
+# this fork does not have.
+name: nol8 TLS exporter
+
+on:
+  pull_request:
+    branches:
+    - nol8/**
+  push:
+    branches:
+    - nol8/**
+
+concurrency:
+  group: nol8-exporter-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  exporter:
+    name: Exporter tests (${{ matrix.tls }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash   # with pipefail, so a failing test fails the step through tee
+    strategy:
+      fail-fast: false
+      matrix:
+        tls: [quictls, openssl]
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+    - name: Checkout the submodules this build uses
+      run: git submodule update --init --depth 1 submodules/${{ matrix.tls }} submodules/googletest
+    - name: Install build dependencies
+      run: sudo apt-get update && sudo apt-get install -y ninja-build libnuma-dev
+    - name: Build MsQuic with its tests
+      run: |
+        cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DQUIC_TLS_LIB=${{ matrix.tls }} \
+          -DQUIC_BUILD_TEST=ON -DQUIC_BUILD_TOOLS=OFF -DQUIC_BUILD_PERF=OFF -DQUIC_ENABLE_LOGGING=OFF
+        cmake --build build -j"$(nproc)"
+    - name: Run the exporter tests
+      # A filter that matches no test passes, so the per-connection test's own line is required.
+      run: |
+        build/bin/Release/msquictest --gtest_filter='*ExportKeyingMaterial*' | tee exporter.log
+        grep -q '\[       OK \] Handshake.ConnectionExportKeyingMaterialPerConnection' exporter.log
