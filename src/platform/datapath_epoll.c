@@ -1716,6 +1716,10 @@ CxPlatSocketContextRecvComplete(
         uint32_t Offset = 0;
         while (Offset < RecvMsgHdr[CurrentMessage].msg_len &&
                IoBlock->RefCount < CXPLAT_MAX_IO_BATCH_SIZE) {
+            //
+            // Zero the descriptor and the client's context after it before filling them.
+            //
+            CxPlatZeroMemory(Datagram, SocketContext->DatapathPartition->Datapath->RecvBlockStride);
             IoBlock->RefCount++;
             Datagram->IoBlock = IoBlock;
 
@@ -1800,10 +1804,10 @@ CxPlatSocketReceiveCoalesced(
             goto Exit;
         }
         //
-        // The socket receive writes the payload before anything reads it: zero the
-        // block's metadata (the IO block and its packet descriptors), not its buffer.
+        // The socket receive writes the payload before anything reads it, and the receive
+        // completion zeroes each packet descriptor it fills: zero only the IO block here.
         //
-        CxPlatZeroMemory(IoBlock, DatapathPartition->Datapath->RecvBlockBufferOffset);
+        CxPlatZeroMemory(IoBlock, sizeof(DATAPATH_RX_IO_BLOCK));
 
         CxPlatZeroMemory(&IoBlock->Route, sizeof(CXPLAT_ROUTE));
         IoBlock->Route.State = RouteResolved;
@@ -1879,10 +1883,10 @@ CxPlatSocketReceiveMessages(
                 goto Exit;
             }
             //
-            // The socket receive writes the payload before anything reads it: zero the
-            // block's metadata (the IO block and its packet descriptors), not its buffer.
+            // The socket receive writes the payload before anything reads it, and the receive
+            // completion zeroes each packet descriptor it fills: zero only the IO block here.
             //
-            CxPlatZeroMemory(IoBlock, DatapathPartition->Datapath->RecvBlockBufferOffset);
+            CxPlatZeroMemory(IoBlock, sizeof(DATAPATH_RX_IO_BLOCK));
 
             IoBlocks[i] = IoBlock;
             CxPlatZeroMemory(&IoBlock->Route, sizeof(CXPLAT_ROUTE));
