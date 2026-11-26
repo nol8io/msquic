@@ -472,6 +472,7 @@ ExecuteTestRequest(
     RegisterTestFunction(QuicTestValidateConnection);
 #ifdef QUIC_API_ENABLE_PREVIEW_FEATURES
     RegisterTestFunction(QuicTestConnectionExportKeyingMaterial);
+    RegisterTestFunction(QuicTestConnectionExportKeyingMaterialPerConnection);
     RegisterTestFunction(QuicTestValidateConnectionExportKeyingMaterial);
     RegisterTestFunction(QuicTestValidateConnectionPoolCreate);
     RegisterTestFunction(QuicTestValidateExecutionContext);

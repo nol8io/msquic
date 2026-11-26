@@ -3,8 +3,8 @@
 	url = https://github.com/google/googletest
 [submodule "submodules/quictls"]
 	path = submodules/quictls
-	url = https://github.com/quictls/openssl.git
-	branch = main
+	url = https://github.com/nol8io/quictls.git
+	branch = nol8/msquic-v2.6.4
 [submodule "submodules/clog"]
 	path = submodules/clog
 	url = https://github.com/microsoft/CLOG.git

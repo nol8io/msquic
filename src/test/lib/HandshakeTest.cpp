@@ -52,6 +52,13 @@ struct ExportKeyingMaterialServerContext {
     MsQuicConfiguration* ServerConfiguration;
     UniquePtr<MsQuicConnection>* Server;
     //
+    // When ExportLabel is set, the server exports with it and with ExportContext (which may
+    // be null) in place of the label and context above.
+    //
+    const char* ExportLabel;
+    const uint8_t* ExportContext;
+    uint32_t ExportContextLength;
+    //
     // Signaled once the keying material export completed.
     //
     CxPlatEvent ExportComplete;
@@ -87,6 +94,11 @@ ExportKeyingMaterialListenerCallback(
                     Config.Label = Context->KmLabel;
                     Config.Context = Context->KmContext;
                     Config.ContextLength = sizeof(Context->KmContext);
+                    if (Context->ExportLabel != nullptr) {
+                        Config.Label = Context->ExportLabel;
+                        Config.Context = Context->ExportContext;
+                        Config.ContextLength = Context->ExportContextLength;
+                    }
                     Config.OutputLength = Context->KmLength;
                     Context->ExportStatus =
                         MsQuic->ConnectionExportKeyingMaterial(
@@ -177,6 +189,125 @@ void QuicTestConnectionExportKeyingMaterial()
     TEST_EQUAL(
         0,
         memcmp(ClientKm, ServerContext.Km, ExportKeyingMaterialServerContext::KmLength));
+#endif
+}
+
+//
+// Opens one connection and reads its RFC 9266 channel binding (EXPORTER-Channel-Binding,
+// empty context) on both ends. The statuses stay QUIC_STATUS_INVALID_STATE where the
+// connection did not get as far as the export.
+//
+static
+void
+ExportChannelBinding(
+    _In_ MsQuicRegistration& Registration,
+    _In_ MsQuicAlpn& Alpn,
+    _In_ MsQuicConfiguration& ServerConfiguration,
+    _In_ MsQuicConfiguration& ClientConfiguration,
+    _Out_writes_bytes_(ExportKeyingMaterialServerContext::KmLength) uint8_t* ClientKm,
+    _Out_writes_bytes_(ExportKeyingMaterialServerContext::KmLength) uint8_t* ServerKm,
+    _Out_ QUIC_STATUS* ClientStatus,
+    _Out_ QUIC_STATUS* ServerStatus
+    )
+{
+    *ClientStatus = QUIC_STATUS_INVALID_STATE;
+    *ServerStatus = QUIC_STATUS_INVALID_STATE;
+
+    ExportKeyingMaterialServerContext ServerContext = {};
+    ServerContext.ServerConfiguration = &ServerConfiguration;
+    ServerContext.ExportStatus = QUIC_STATUS_INVALID_STATE;
+    ServerContext.ExportLabel = "EXPORTER-Channel-Binding";
+    ServerContext.ExportContext = nullptr;
+    ServerContext.ExportContextLength = 0;
+
+    UniquePtr<MsQuicConnection> Server;
+    ServerContext.Server = &Server;
+
+    MsQuicListener Listener(
+        Registration, CleanUpManual, ExportKeyingMaterialListenerCallback, &ServerContext);
+    TEST_QUIC_SUCCEEDED(Listener.GetInitStatus());
+
+    QuicAddr ServerLocalAddr(QUIC_ADDRESS_FAMILY_INET);
+    TEST_QUIC_SUCCEEDED(Listener.Start(Alpn, ServerLocalAddr));
+    TEST_QUIC_SUCCEEDED(Listener.GetLocalAddr(ServerLocalAddr));
+
+    MsQuicConnection Client(Registration);
+    TEST_QUIC_SUCCEEDED(Client.GetInitStatus());
+    TEST_QUIC_SUCCEEDED(Client.Start(ClientConfiguration, ServerLocalAddr.GetFamily(), QUIC_TEST_LOOPBACK_FOR_AF(ServerLocalAddr.GetFamily()), ServerLocalAddr.GetPort()));
+
+    TEST_TRUE(Client.HandshakeCompleteEvent.WaitTimeout(TestWaitTimeout));
+    TEST_TRUE(Client.HandshakeComplete);
+    TEST_TRUE(Server);
+    TEST_TRUE(Server->HandshakeCompleteEvent.WaitTimeout(TestWaitTimeout));
+    TEST_TRUE(ServerContext.ExportComplete.WaitTimeout(TestWaitTimeout));
+    *ServerStatus = ServerContext.ExportStatus;
+    CxPlatCopyMemory(ServerKm, ServerContext.Km, ExportKeyingMaterialServerContext::KmLength);
+
+    QUIC_KEYING_MATERIAL_CONFIG Config;
+    Config.Label = ServerContext.ExportLabel;
+    Config.Context = nullptr;
+    Config.ContextLength = 0;
+    Config.OutputLength = ExportKeyingMaterialServerContext::KmLength;
+    *ClientStatus = MsQuic->ConnectionExportKeyingMaterial(Client.Handle, &Config, ClientKm);
+}
+
+//
+// Validate the channel binding is each connection's own: its two ends agree, another
+// connection's differs, and neither is the export of an all-zero exporter secret, which a
+// TLS library that never derives the exporter secret returns on every connection.
+//
+void QuicTestConnectionExportKeyingMaterialPerConnection()
+{
+    //
+    // HKDF-Expand-Label(Derive-Secret(0, "EXPORTER-Channel-Binding", ""), "exporter",
+    // Hash(""), 32) (RFC 8446 7.5) for a SHA-384 and a SHA-256 cipher suite.
+    //
+    static const uint8_t ZeroSecretExport[2][ExportKeyingMaterialServerContext::KmLength] = {
+        { 0x4a, 0x0a, 0x93, 0xfb, 0x69, 0x55, 0x18, 0xb2, 0x0a, 0xcf, 0x92, 0x21, 0x52, 0x71, 0x3b, 0x10,
+          0x05, 0xe8, 0x74, 0xaf, 0x0e, 0x92, 0x78, 0xc9, 0x26, 0x4f, 0x8d, 0xb3, 0x75, 0x23, 0x34, 0xe8 },
+        { 0xc0, 0x55, 0xac, 0xbc, 0x03, 0xf3, 0xa7, 0xc6, 0x1f, 0x79, 0xac, 0xc2, 0x19, 0x42, 0xea, 0x75,
+          0xad, 0x48, 0xe9, 0x16, 0x99, 0xc1, 0x8c, 0xd5, 0x5e, 0x61, 0x5d, 0x83, 0x86, 0x00, 0x0b, 0x70 }
+    };
+
+    MsQuicRegistration Registration(true);
+    TEST_TRUE(Registration.IsValid());
+
+    MsQuicAlpn Alpn("MsQuicTest");
+
+    MsQuicConfiguration ServerConfiguration(Registration, Alpn, ServerSelfSignedCredConfig);
+    TEST_TRUE(ServerConfiguration.IsValid());
+
+    MsQuicCredentialConfig ClientCredConfig;
+    MsQuicConfiguration ClientConfiguration(Registration, Alpn, ClientCredConfig);
+    TEST_TRUE(ClientConfiguration.IsValid());
+
+    uint8_t ClientKm[2][ExportKeyingMaterialServerContext::KmLength] = {};
+    uint8_t ServerKm[2][ExportKeyingMaterialServerContext::KmLength] = {};
+    for (uint32_t i = 0; i < 2; ++i) {
+        QUIC_STATUS ClientStatus, ServerStatus;
+        ExportChannelBinding(
+            Registration, Alpn, ServerConfiguration, ClientConfiguration,
+            ClientKm[i], ServerKm[i], &ClientStatus, &ServerStatus);
+#ifdef _KERNEL_MODE
+        TEST_QUIC_STATUS(QUIC_STATUS_NOT_SUPPORTED, ServerStatus);
+        TEST_QUIC_STATUS(QUIC_STATUS_NOT_SUPPORTED, ClientStatus);
+#else
+        TEST_QUIC_STATUS(QUIC_STATUS_SUCCESS, ServerStatus);
+        TEST_QUIC_STATUS(QUIC_STATUS_SUCCESS, ClientStatus);
+        TEST_EQUAL(
+            0,
+            memcmp(ClientKm[i], ServerKm[i], ExportKeyingMaterialServerContext::KmLength));
+        for (uint32_t z = 0; z < 2; ++z) {
+            TEST_NOT_EQUAL(
+                0,
+                memcmp(ClientKm[i], ZeroSecretExport[z], ExportKeyingMaterialServerContext::KmLength));
+        }
+#endif
+    }
+#ifndef _KERNEL_MODE
+    TEST_NOT_EQUAL(
+        0,
+        memcmp(ClientKm[0], ClientKm[1], ExportKeyingMaterialServerContext::KmLength));
 #endif
 }
 #endif // QUIC_API_ENABLE_PREVIEW_FEATURES

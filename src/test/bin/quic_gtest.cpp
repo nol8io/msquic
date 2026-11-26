@@ -506,6 +506,15 @@ TEST(Handshake, ConnectionExportKeyingMaterial) {
     }
 }
 
+TEST(Handshake, ConnectionExportKeyingMaterialPerConnection) {
+    TestLogger Logger("QuicTestConnectionExportKeyingMaterialPerConnection");
+    if (TestingKernelMode) {
+        ASSERT_TRUE(InvokeKernelTest(FUNC(QuicTestConnectionExportKeyingMaterialPerConnection)));
+    } else {
+        QuicTestConnectionExportKeyingMaterialPerConnection();
+    }
+}
+
 TEST(ParameterValidation, ValidateConnectionExportKeyingMaterial) {
     TestLogger Logger("QuicTestValidateConnectionExportKeyingMaterial");
     if (TestingKernelMode) {
